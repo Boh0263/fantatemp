@@ -1,6 +1,7 @@
 import pandas as pd
 import json
 import streamlit as st
+import altair as alt
 
 # Load JSON
 def load_data():
@@ -32,7 +33,7 @@ gamestats_df["player_name"] = gamestats_df["player_id"].map(id_to_name)
 
 # --- Streamlit UI ---
 st.set_page_config(page_title="Player Stats Dashboard", layout="wide")
-st.title("⚽ Manuel ti voglio bene <3")
+st.title("⚽ Player Statistics Explorer")
 
 # Sidebar filters
 teams = players_df["team_name_short"].dropna().unique()
@@ -87,7 +88,7 @@ def index_badge(label, value):
                 f"<b>{label}:</b> {level} ({value})</div>", unsafe_allow_html=True)
 
 # Player detail drill-down
-st.subheader("Dettagli (Manuel tvb <3)")
+st.subheader("Player Detail")
 player_list = filtered_players["name"].dropna().unique()
 selected_player = st.selectbox("Choose a Player", player_list)
 
@@ -191,9 +192,44 @@ if selected_player:
             st.metric("Duelli Vinti a Partita", round(duelli_vinti,2))
             st.metric("Duelli Aerei a Partita", round(duelli_aerei,2))
 
+        # --- Bonus / Malus Chart ---
+        if not player_games.empty:
+            st.subheader("📈 Bonus / Malus Overview")
+
+            bonus_cols = ["gf", "assist"]
+            malus_cols = ["amm", "esp", "rigori_sbagliati", "autogol"]
+
+            available_bonus = [c for c in bonus_cols if c in player_games.columns]
+            available_malus = [c for c in malus_cols if c in player_games.columns]
+
+            df_bonusmalus = player_games[["matchday"] + available_bonus + available_malus].fillna(0).copy()
+
+            # Melt into long format
+            df_melt = df_bonusmalus.melt(id_vars="matchday", var_name="type", value_name="value")
+
+            # Assign direction: bonuses up, maluses down
+            df_melt["direction"] = df_melt["type"].apply(lambda x: "Bonus" if x in available_bonus else "Malus")
+            df_melt.loc[df_melt["direction"] == "Malus", "value"] *= -1
+
+            chart = (
+                alt.Chart(df_melt)
+                .mark_bar()
+                .encode(
+                    x="matchday:O",
+                    y="value:Q",
+                    color=alt.condition(
+                        alt.datum.direction == "Bonus", alt.value("green"), alt.value("red")
+                    ),
+                    tooltip=["matchday", "type", "value"]
+                )
+                .properties(width=700, height=300)
+            )
+
+            st.altair_chart(chart, use_container_width=True)
+
     # Show raw tables below
-    st.write("### Season Stats (raw) (se proprio vuoi i dettagli come mammalab li ha fatti)")
+    st.write("### Season Stats (raw)")
     st.dataframe(player_stats.drop(columns=["player_id"]))
     if not player_games.empty:
-        st.write("### Matchday Stats (raw) (specifico match)")
+        st.write("### Matchday Stats (raw)")
         st.dataframe(player_games.drop(columns=["player_id"]))
